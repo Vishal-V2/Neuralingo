@@ -28,10 +28,11 @@ except Exception:
 speech_bubble_model = None
 text_cluster_model = None
 ocr_engine = None
+cleaning_inpainter = None
 
 def load_all_models():
-    global speech_bubble_model, text_cluster_model, ocr_engine
-    
+    global speech_bubble_model, text_cluster_model, ocr_engine, cleaning_inpainter
+
     speech_bubble_model = YOLO(constants.SPEECH_BUBBLE_MODEL_PATH)
     text_cluster_model = YOLO(constants.TEXT_CLUSTER_MODEL_PATH)
 
@@ -47,4 +48,14 @@ def load_all_models():
         from manga_ocr import MangaOcr
         ocr_engine = MangaOcr()
 
-    return speech_bubble_model, text_cluster_model, ocr_engine
+    cleaning_config = config.cleaning_config
+    selected_inpainter = cleaning_config.get("model", "lama")
+
+    if selected_inpainter == "migan":
+        from pipeline.core.cleaning.migan_inpainter import MiganInpainter
+        cleaning_inpainter = MiganInpainter()
+    else:
+        from pipeline.core.cleaning.lama_inpainter import LamaInpainter
+        cleaning_inpainter = LamaInpainter()
+
+    return speech_bubble_model, text_cluster_model, ocr_engine, cleaning_inpainter

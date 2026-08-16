@@ -19,7 +19,10 @@ class TranslationWorker(QObject):
 
     @Slot()
     def run(self):
-        self._start_text_translation()
+        try:
+            self._start_text_translation()
+        except Exception as e:
+            print(f"[TRANSLATION] Error: {e}")
 
         self.finished.emit(self.batch_dict)
     

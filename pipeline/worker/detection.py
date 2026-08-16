@@ -42,16 +42,19 @@ class DetectionWorker(QObject):
 
     @Slot()
     def run(self):
-        self._speech_bubble_detection()
-        print("[DETECTION] speech_bubbles:", len(self.speech_bubbles_data), [(sb.class_name, sb.confidence) for sb in self.speech_bubbles_data])
-        self._text_cluster_detection()
         try:
-            counts = [len(sb.text_clusters or []) for sb in self.speech_bubbles_data]
-            print("[DETECTION] clusters_per_bubble:", counts)
-        except Exception:
-            pass
-        self.visualize_detection(self.image_cv2, self.speech_bubbles_data)
-        
+            self._speech_bubble_detection()
+            print("[DETECTION] speech_bubbles:", len(self.speech_bubbles_data), [(sb.class_name, sb.confidence) for sb in self.speech_bubbles_data])
+            self._text_cluster_detection()
+            try:
+                counts = [len(sb.text_clusters or []) for sb in self.speech_bubbles_data]
+                print("[DETECTION] clusters_per_bubble:", counts)
+            except Exception:
+                pass
+            self.visualize_detection(self.image_cv2, self.speech_bubbles_data)
+        except Exception as e:
+            print(f"[DETECTION] Error: {e}")
+
         self.finished.emit(self.speech_bubbles_data)
     
 

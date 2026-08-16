@@ -52,7 +52,12 @@ class SpeechBubbleDetection:
                     text_clusters=None
                 ))
 
-        # Always run classical-vision fallback to supplement missing bubbles
+        # Classical-vision fallback: only run when YOLO found nothing at all, so it
+        # actually stays a rare-case supplement instead of scanning every page and
+        # risking false-positive "bubbles" on plain artwork.
+        if SBdata:
+            return SBdata
+
         h, w = image.shape[:2]
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         blur = cv2.GaussianBlur(gray, (5, 5), 0)
@@ -79,8 +84,8 @@ class SpeechBubbleDetection:
             if roi_mean < 160:  # bubbles tend to be light
                 continue
             candidate = (x, y, x + ww, y + hh)
-            # only add if not overlapping with existing YOLO bubbles too much
-            if any(_iou(candidate, sb.position) > 0.30 for sb in SBdata):
+            # only add if not overlapping with existing bubbles too much
+            if any(_iou(candidate, sb.position) > 0.15 for sb in SBdata):
                 continue
             bounding_image = image[y:y + hh, x:x + ww]
             SBdata.append(SpeechBubble(
