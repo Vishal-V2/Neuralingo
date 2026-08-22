@@ -33,12 +33,12 @@ class PageJob:
 class AutomaticTranslationBase(QObject):
     receive_selected_files = Signal(list)
 
-    def __init__(self, speech_bubble_model, text_cluster_model, manga_ocr):
+    def __init__(self, speech_bubble_model, text_cluster_model, manga_ocr, cleaning_inpainter):
         super().__init__()
         self.load_config()
 
         self.detection_manager = DetectionManager(self.detection_config, speech_bubble_model, text_cluster_model)
-        self.cleaning_manager = CleaningManager(self.cleaning_config)
+        self.cleaning_manager = CleaningManager(cleaning_inpainter)
         self.recognition_manager = RecognitionManager(manga_ocr)
         self.translation_manager = TranslationManager(self.api_config, self.translation_config)
         self.typesetting_manager = TypesettingManager()

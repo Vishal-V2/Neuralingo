@@ -1,19 +1,11 @@
 from PySide6.QtWidgets import (
     QApplication, QMainWindow
+
 )
 import sys
 import os
 from model.load_models import load_all_models
 from pipeline.manager.base import AutomaticTranslationBase
-from simple_lama_inpainting import SimpleLama
-
-class CleaningBase:
-    def __init__(self):
-        # initialize the inpainter ONCE
-        self.inpainter = SimpleLama()
-
-    def batch_cleaning(self, image_pil, image_mask):
-        return self.inpainter.inpaint(image_pil, image_mask)
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -21,9 +13,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Main Window")
         self.setMinimumSize(800, 600)
 
-        sb, tc, ocr = load_all_models()
+        sb, tc, ocr, inpainter = load_all_models()
 
-        self.ye = AutomaticTranslationBase(sb, tc, ocr)
+        self.ye = AutomaticTranslationBase(sb, tc, ocr, inpainter)
 
         folder_path = "out"
 

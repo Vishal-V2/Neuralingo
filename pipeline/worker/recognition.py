@@ -23,8 +23,11 @@ class RecognitionWorker(QObject):
 
     @Slot()
     def run(self):
-        self._text_recognition()
-        
+        try:
+            self._text_recognition()
+        except Exception as e:
+            print(f"[RECOGNITION] Error: {e}")
+
         self.finished.emit(self.speech_bubbles_data)
     
 

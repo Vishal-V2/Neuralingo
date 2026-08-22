@@ -2,6 +2,8 @@ from ultralytics import YOLO
 from pipeline.core.box_data import SpeechBubble, TextCluster
 import constants
 from pipeline.core.detection import overlap
+import cv2
+import numpy as np
 
 
 
@@ -28,7 +30,6 @@ class TextClusterDetection:
 
         TCresult = self.model(SBdata.bounding_image)[0]
 
-        """
         if not TCresult.boxes:
             # Fallback: create one cluster covering the whole bubble if nothing is detected
             h, w = SBdata.bounding_image.shape[:2]
@@ -43,8 +44,7 @@ class TextClusterDetection:
                 jp_text=None,
                 tr_text=None,
             ))
-            return TCdata 
-        """
+            return TCdata
         
         for box in TCresult.boxes:
             TCconf = round(box.conf.item(), 2)
@@ -102,4 +102,4 @@ class TextClusterDetection:
             return self._detect_batch(SBdata)
         
         return self._detect_single(SBdata)
-        
+

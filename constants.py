@@ -369,4 +369,3 @@ Handle Nuance & Wordplay:
     that captures the spirit of the joke. If impossible, prioritize a translation that sounds natural and still 
     makes sense in the context.
 """
-

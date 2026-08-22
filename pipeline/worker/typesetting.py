@@ -25,8 +25,11 @@ class TypesettingWorker(QObject):
 
     def _start_text_typesetting(self):
         for pages in self.batch_data.pages:
-            image_qt = self.typesetting_process.convert_image(pages.cleaned_image)
-            self.typesetting_process.set_image(image_qt)
+            try:
+                image_qt = self.typesetting_process.convert_image(pages.cleaned_image)
+                self.typesetting_process.set_image(image_qt)
 
-            self.typesetting_process.load_font()
-            self.typesetting_process.batch_text_typesetting(pages.speech_bubbles, pages.index)
+                self.typesetting_process.load_font()
+                self.typesetting_process.batch_text_typesetting(pages.speech_bubbles, pages.index)
+            except Exception as e:
+                print(f"[TYPESETTING] Error on page {pages.index}: {e}")

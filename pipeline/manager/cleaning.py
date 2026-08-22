@@ -12,9 +12,9 @@ from pipeline.core.box_data import TranslationPage
 class CleaningManager(QObject):
     data = Signal(Image.Image)
 
-    def __init__(self, cleaning_config: dict):
+    def __init__(self, inpainter):
         super().__init__()
-        self.cleaning_config = cleaning_config
+        self.inpainter = inpainter
 
 
     def start(self, page_data: TranslationPage):
@@ -24,7 +24,7 @@ class CleaningManager(QObject):
 
         self.worker, self.run_in_thread = run_in_thread(
             CleaningWorker,
-            self.cleaning_config,
+            self.inpainter,
             text_clusters_data,
             image_cv2,
             image_pil,
