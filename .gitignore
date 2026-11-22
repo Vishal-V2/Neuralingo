@@ -4,9 +4,10 @@ __pycache__/
 images/
 output/
 out/
-test
+test/
 config.yaml
 main.py
 cli/
 model/old
 assets/
+graphify-out/
