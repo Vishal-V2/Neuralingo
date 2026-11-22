@@ -6,6 +6,45 @@ from pipeline.core.box_data import SpeechBubble
 import constants
 
 
+# Lower thresholds tried, in order, when nothing passes the configured threshold.
+RETRY_THRESHOLDS = (0.50, 0.40, 0.35, 0.30, 0.25)
+
+
+def thresholds_to_try(threshold: float, retry_thresholds=RETRY_THRESHOLDS) -> list[float]:
+    return [threshold] + [t for t in retry_thresholds if t < threshold]
+
+
+# Boxes of *different* classes overlapping at least this much are the same bubble
+# that the model couldn't decide how to classify (e.g. narration vs frameless).
+DUPLICATE_IOU = 0.80
+
+
+def merge_cross_class_duplicates(
+    candidates: list[tuple[float, str, tuple[int, int, int, int]]]
+) -> list[tuple[float, str, tuple[int, int, int, int]]]:
+    """Merge near-identical boxes that YOLO reported under different classes.
+
+    YOLO scores each class separately, so a bubble the model is unsure how to
+    classify shows up as several weak boxes (e.g. narration 0.46 + frameless 0.45)
+    that each fall under the threshold. Each group is merged into its strongest
+    box/class, with the confidences combined as 1 - (1-a)(1-b).
+    Takes and returns (confidence, class_name, (x_min, y_min, x_max, y_max)), with
+    confidences rounded to 2 decimals and sorted strongest first.
+    """
+    merged: list[dict] = []
+    for conf, class_name, xyxy in sorted(candidates, key=lambda c: c[0], reverse=True):
+        for group in merged:
+            if class_name not in group["classes"] and _iou(group["xyxy"], xyxy) >= DUPLICATE_IOU:
+                group["conf"] = 1 - (1 - group["conf"]) * (1 - conf)
+                group["classes"].add(class_name)
+                break
+        else:
+            merged.append({"conf": conf, "class_name": class_name, "xyxy": xyxy, "classes": {class_name}})
+
+    merged.sort(key=lambda g: g["conf"], reverse=True)
+    return [(round(g["conf"], 2), g["class_name"], g["xyxy"]) for g in merged]
+
+
 def _iou(a: tuple[int, int, int, int], b: tuple[int, int, int, int]) -> float:
     ax1, ay1, ax2, ay2 = a
     bx1, by1, bx2, by2 = b
@@ -29,20 +68,19 @@ class SpeechBubbleDetection:
     
 
     def detect(self, image: np.ndarray) -> list[SpeechBubble]:
-        SBdata: list[SpeechBubble] = []
-        SBresult = self.model(image)[0]
+        # Run YOLO once at the lowest threshold we might accept, then walk down the
+        # threshold ladder by filtering that single result.
+        SBresult = self.model(image, conf=min(self.threshold, *RETRY_THRESHOLDS))[0]
+        candidates = merge_cross_class_duplicates([
+            (box.conf.item(), self.model.names[int(box.cls.item())], tuple(map(int, box.xyxy.tolist()[0])))
+            for box in (SBresult.boxes or [])
+        ])
 
-        if not SBresult.boxes:
-            pass
-        
-        if SBresult.boxes:
-            for box in SBresult.boxes:
-                SBconf = round(box.conf.item(), 2)
-                if SBconf < self.threshold:
+        for threshold in thresholds_to_try(self.threshold):
+            SBdata: list[SpeechBubble] = []
+            for SBconf, class_name, (SBx_min, SBy_min, SBx_max, SBy_max) in candidates:
+                if SBconf < threshold:
                     continue
-                SBx_min, SBy_min, SBx_max, SBy_max = map(int, box.xyxy.tolist()[0])
-                class_id = int(box.cls.item())
-                class_name = self.model.names[class_id]
                 bounding_image = image[SBy_min:SBy_max, SBx_min:SBx_max]
                 SBdata.append(SpeechBubble(
                     position=(SBx_min, SBy_min, SBx_max, SBy_max),
@@ -51,12 +89,13 @@ class SpeechBubbleDetection:
                     bounding_image=bounding_image,
                     text_clusters=None
                 ))
+            if SBdata:
+                return SBdata
 
-        # Classical-vision fallback: only run when YOLO found nothing at all, so it
-        # actually stays a rare-case supplement instead of scanning every page and
+        # Classical-vision fallback: only run when YOLO found nothing even at the
+        # lowest retry threshold, so it stays a rare-case supplement instead of
         # risking false-positive "bubbles" on plain artwork.
-        if SBdata:
-            return SBdata
+        SBdata = []
 
         h, w = image.shape[:2]
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)

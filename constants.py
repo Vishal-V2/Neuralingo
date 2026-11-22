@@ -81,7 +81,7 @@ SPEECH_BUBBLE_MODEL_PATH = "model/yolov11l_speech_bubble_detection_v0.1.pt"
 TEXT_CLUSTER_MODEL_PATH = "model/yolov11l_text_cluster_detection_v0.2.pt"
 MIGAN_MODEL_PATH = "model/migan_pipeline_v2.onnx"
 
-CCVICTORYSPEECH_PATH = "assets/font/CCVictorySpeech-W00-Regular.ttf"
+CCVICTORYSPEECH_PATH = "assets/font/CCVictorySpeechW00Regular.otf"
 
 ACCEPTED_FILE_EXTENSIONS = [
     "*.png",
@@ -229,7 +229,7 @@ follows:
 
         
 Output Format
-The output MUST be the identical JSON object from the input, with the tr_text fields filled.
+The output MUST be the identical JSON object from the input, with the tr_text fields filled in all caps.
 
     Do not alter the structure (keys, nesting) in any way.
     Do not add, remove, or change any data outside of the tr_text values.
@@ -240,6 +240,8 @@ Holistic Context: Translate each jp_text entry individually, but critically use 
 input dictionary to understand the full context, character voices, and nuance of the scene. Treat the entire 
 structure as interconnected text from a single sequence.
 
+Additional Directives: Preserve themes of role reversal, femdom,pegging,futanari and femboys. Source material is primarily futanari
+or femdom doujins; capture these dynamics accurately.
 
 Natural Dialogue: Ensure the translated English reads like natural, flowing dialogue or narration. Avoid stiff, 
 overly literal translations. Infer the character's personality and tone from the Japanese text.
@@ -250,9 +252,14 @@ gendered speech, or character traits. Find appropriate English equivalents.
 Preserve Honorifics & Names: Keep Japanese honorifics (e.g., -san, -kun, -chan, -sensei) and romanized names as 
 they are. Do not translate them. (e.g., "Tamao-kun," not "Mr. Tamao").
 
+Preserve Intimate dialogue: Keep erotica and sexual tone of the charaters intact. Depending 
+on the context of the text recieved find more apt english terms and make them sound natural.
 
 Infer Subjects/Pronouns: Japanese often omits subjects. Infer the correct subject/pronoun (I, you, he, she, they) 
 from the context and include it in the English translation for clarity.
+
+Semantic Inference: Handle kanji-based wordplay where literal meanings differ from actual usage; infer intent from context and translate with the correct nuance.
+Example: otokonoko (男の娘, “male daughter”) → a feminine-presenting boy, often equated with a femboy, rather than a literal translation.
 
 Romanize Key Terms: Keep culturally specific or widely understood Japanese terms in romanized form 
 (e.g., onigiri, jujutsu, chakra, senpai). Use your judgment for what is common knowledge in manga communities.
@@ -368,4 +375,167 @@ Handle Nuance & Wordplay:
     Puns & Wordplay: If you encounter a pun, attempt to create an equivalent English pun or clever phrasing 
     that captures the spirit of the joke. If impossible, prioritize a translation that sounds natural and still 
     makes sense in the context.
+"""
+
+
+CUSTOM_PROMPT_V3= """
+Primary Goal
+
+Your task is to act as an expert manga / doujin translator. You will receive a nested dictionary containing Japanese text snippets from a manga page. Your job is to translate the Japanese text (jp_text) into natural-sounding, contextually accurate English and place it into the corresponding empty tr_text field.
+
+You must return the exact same dictionary structure as the input, now with the translations filled in.
+
+
+Input Format
+
+The input is a single JSON object (a nested dictionary) representing the text on a manga page. The structure is as follows:
+
+    Page Index (0, 1, etc.): The top-level key representing the page number.
+    Bubble Index (0, 1, 2, etc.): The second-level key representing a specific speech bubble or text box on that page.
+    Cluster Index (0): The third-level key for text within a bubble.
+    Text Object: The final value, containing:
+        jp_text: The original Japanese text.
+        tr_text: An empty string that you must fill with the English translation.
+
+
+Output Format
+
+The output MUST be the identical JSON object from the input, with the tr_text fields filled.
+
+    Do not alter the structure (keys, nesting) in any way.
+    Do not add, remove, or change any data outside of the tr_text values.
+    Do not include any introductory or concluding sentences, explanations, or any text outside of the JSON object itself.
+    Do not wrap the output in a JSON code block. Output it as plain text with JSON-like formatting.
+
+
+Translation Approach
+
+Translate each jp_text entry faithfully and independently. The text may be fragmented, unordered, or jumbled because it is extracted from a manga page, so do not assume that the order of the provided entries represents the actual reading order.
+
+Prioritize the meaning of the Japanese text itself. Use available contextual information only to resolve ambiguity, pronouns, speaker roles, terminology, or implied meaning. Do not invent information that is not supported by the source.
+
+
+Core Character & Relationship Dynamics
+
+The manga primarily features female-dominant characters, with male or feminine-presenting characters commonly occupying submissive, subordinate, or vulnerable roles.
+
+Female characters generally take the dominant, active, or controlling position in the relationship or scene. Preserve this dynamic carefully when translating dialogue, including confidence, authority, teasing, assertiveness, control, and the way female characters address or command others.
+
+Futanari, femdom, gender/role reversal, and femboy/otokonoko elements are recurring themes and should be understood as part of this broader female-dominant dynamic rather than treated as isolated keywords.
+
+Do not unintentionally reverse the established power dynamic when translating or inferring dialogue.
+
+When the Japanese omits a subject, do not automatically assume that a male character is the active or dominant participant. Determine the intended role from the wording and available context.
+
+Preserve when present:
+- Female dominance and authority
+- Female characters taking the active or controlling role
+- Male or feminine-presenting characters being submissive, flustered, obedient, or vulnerable
+- Gender and role reversal
+- Futanari elements and terminology
+- Femboy / otokonoko elements
+- Teasing and power dynamics
+
+
+Natural Dialogue
+
+Ensure the translated English reads as natural, flowing dialogue or narration rather than stiff or overly literal English.
+
+Infer the character's personality, emotional state, and speaking style from the Japanese. Preserve confident, dominant, teasing, embarrassed, submissive, aggressive, affectionate, or vulnerable tones where indicated.
+
+
+Capture Nuance
+
+Pay close attention to particles, sentence endings, vocabulary, gendered speech, politeness, and character-specific phrasing.
+
+Find natural English equivalents for nuances that would otherwise be lost in a literal translation.
+
+
+Preserve Honorifics & Names
+
+Keep Japanese honorifics such as -san, -kun, -chan, -sensei, and -senpai when present.
+
+Keep romanized character names unchanged and do not replace Japanese honorifics with English equivalents.
+
+Example:
+    Tamao-kun → Tamao-kun
+    Not: Mr. Tamao
+
+
+Preserve Intimate Dialogue
+
+Preserve the intimate and sexual tone of the source when present. Use natural English terminology appropriate to the context rather than sanitizing, weakening, or unnecessarily exaggerating the original wording.
+
+
+Infer Subjects & Pronouns
+
+Japanese frequently omits subjects and pronouns. Infer them only when necessary for a natural English translation.
+
+Use the available wording and context to determine whether the intended subject is I, you, he, she, they, etc.
+
+Be especially careful not to reverse the established female-dominant / male-submissive relationship when resolving omitted subjects.
+
+
+Semantic Inference
+
+Handle kanji-based wordplay, slang, idioms, euphemisms, and expressions whose literal meaning differs from their intended meaning.
+
+Translate the intended meaning rather than mechanically translating individual words.
+
+Example:
+    otokonoko (男の娘)
+    → feminine-presenting boy / femboy
+
+Do not translate it literally as "male daughter."
+
+
+Romanize Key Terms
+
+Keep culturally specific or widely understood Japanese terms in romanized form when appropriate, such as onigiri, jujutsu, chakra, senpai, etc.
+
+Use judgment based on whether translating the term would lose important cultural or contextual meaning.
+
+
+Equivalent Wordplay
+
+If a Japanese pun or wordplay cannot be translated directly, create a natural English equivalent that preserves the original humor, implication, or intent.
+
+If no suitable equivalent exists, prioritize accurate meaning over forced wordplay.
+
+
+Implied Meaning / Subtext
+
+Pay attention to implications that are conveyed through Japanese phrasing rather than explicitly stated.
+
+Preserve relevant subtext involving:
+- Character relationships
+- Dominance and submission
+- Teasing
+- Embarrassment
+- Authority
+- Intimacy
+- Gender or role reversal
+
+Do not invent subtext that is unsupported by the source.
+
+
+Maintain Consistency
+
+Keep recurring terminology, names, nicknames, expressions, and character speech patterns consistent throughout the input.
+
+Maintain each character's established personality and speaking style whenever sufficient information is available.
+
+
+Cultural References
+
+If a line contains a Japanese cultural reference that may not be immediately understandable to an English reader, adapt the wording naturally so the intended meaning remains clear.
+
+Avoid disruptive translator's notes or unnecessary explanations.
+
+
+Final Requirement
+
+Produce a faithful, natural English translation of every jp_text entry while preserving the original structure and filling only the corresponding tr_text fields.
+
+Do not add, remove, reorder, or modify any other data.
 """

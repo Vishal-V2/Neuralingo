@@ -1,4 +1,5 @@
 from google import genai
+from google.genai import types
 from google.genai.errors import (
     ClientError, ServerError, APIError
 )
@@ -16,13 +17,18 @@ class GeminiApi:
     
 
     def translate(self, jp_texts_dict: dict) -> dict:
-        prompt = constants.CUSTOM_PROMPT_V4
+        prompt = constants.CUSTOM_PROMPT_V1
         jp_texts = json.dumps(jp_texts_dict, ensure_ascii=False, indent=4)
 
         try:
             response = self.client.models.generate_content(
                 model=self.model,
-                contents=(prompt + jp_texts)
+                contents=(prompt + jp_texts),
+                # No tools are used, so AFC is pointless; disabling it explicitly
+                # also silences the SDK's "Direct use of AFC..." warning.
+                config=types.GenerateContentConfig(
+                    automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
+                ),
             )
             tr_texts = response.text
 

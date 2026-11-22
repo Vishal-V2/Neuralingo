@@ -33,5 +33,10 @@ class LamaInpainter:
             else:
                 raise
 
+        # SimpleLama pads inputs to a multiple of 8 and doesn't crop back,
+        # so trim the result to the original size.
+        if result.size != rgb_image.size:
+            result = result.crop((0, 0, *rgb_image.size))
+
         result.save("output/image_cleaned.png")
         return result

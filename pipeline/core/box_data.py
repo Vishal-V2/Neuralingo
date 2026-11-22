@@ -10,6 +10,12 @@ class TextCluster:
     jp_text: str | None = None
     tr_text: str | None = None
     area: float | None = None
+    # Absolute (x_min, y_min, x_max, y_max) of each text line, for paragraph regions
+    # on text pages (page_mode: text); None for normal bubble text.
+    lines: list[tuple[int, int, int, int]] | None = None
+    # Fill colour (RGB) of an outlined caption's text: one per speaker on multi-speaker
+    # captions (see detection/captions.py); None otherwise.
+    color: tuple[int, int, int] | None = None
 
 
 @dataclass

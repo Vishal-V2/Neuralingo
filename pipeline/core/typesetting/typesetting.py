@@ -3,17 +3,24 @@ from PySide6.QtWidgets import (
     QApplication
 )
 from PySide6.QtGui import (
-    QPixmap, QFont, QFontDatabase, 
+    QPixmap, QFont, QFontDatabase, QFontMetricsF,
     QTextCursor, QTextBlockFormat, QImage, 
     QPainter, QTextOption, QPen
 )
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
+import os
 from PIL import Image
 from PIL.ImageQt import ImageQt
 
 from pipeline.core.box_data import SpeechBubble
+from pipeline.core.detection.text_blocks import PARAGRAPH_CLASS_NAME
+from pipeline.core.detection.captions import CAPTION_CLASS_NAME, OUTLINE_PADDING
 import constants
 
+
+# Space between speakers' paragraphs in a caption, as a fraction of the font size.
+CAPTION_PARAGRAPH_GAP = 0.6
 
 
 class OutlinedTextItem(QGraphicsTextItem):
@@ -118,7 +125,8 @@ class TypesettingProcess:
         self, 
         font_size,
         text_width,
-        text_item: OutlinedTextItem
+        text_item: OutlinedTextItem,
+        alignment=Qt.AlignCenter
     ) -> OutlinedTextItem:
         selected_font = QFont(self.REGULAR_FONT)
         selected_font.setPixelSize(font_size)
@@ -138,7 +146,7 @@ class TypesettingProcess:
 
         text_cursor = QTextCursor(text_document)
         text_block = QTextBlockFormat()
-        text_block.setAlignment(Qt.AlignCenter)
+        text_block.setAlignment(alignment)
         text_cursor.select(QTextCursor.Document)
         text_cursor.mergeBlockFormat(text_block)
         text_cursor.clearSelection()
@@ -152,6 +160,13 @@ class TypesettingProcess:
         idx: int
     ):
         self.current_index = idx
+        if speech_bubble_data.class_name == PARAGRAPH_CLASS_NAME:
+            self.paragraph_typesetting(speech_bubble_data)
+            return
+        if speech_bubble_data.class_name == CAPTION_CLASS_NAME:
+            self.caption_typesetting(speech_bubble_data)
+            return
+
         is_frameless = (speech_bubble_data.class_name == constants.FRAMELESS_CLASS_NAME)
         SBx_min, SBy_min, SBx_max, SBy_max = speech_bubble_data.position
         SBx_length = (SBx_max - SBx_min)
@@ -193,6 +208,98 @@ class TypesettingProcess:
                     self.process_text_typesetting((SBx_min, SBx_max), (SBx_length, SBy_length), TCsorted[0].tr_text, TCsorted[0].position, is_side=False)
                 else:                    
                     self.process_text_typesetting((SBx_min, SBx_max), (SBx_length, SBy_length), td.tr_text, td.position, is_side=True)
+
+
+    def paragraph_typesetting(self, speech_bubble_data: SpeechBubble):
+        # Paragraphs on text pages: fill the block's rectangle with a left-aligned
+        # paragraph starting at its top, like the original text.
+        text_cluster_data = speech_bubble_data.text_clusters[0]
+        if not text_cluster_data.tr_text:
+            return
+
+        x_min, y_min, x_max, y_max = speech_bubble_data.position
+        width, height = x_max - x_min, y_max - y_min
+
+        # Never larger than the original lines, so a short title doesn't balloon.
+        lines = text_cluster_data.lines or []
+        max_size = int(sorted(l[3] - l[1] for l in lines)[len(lines) // 2]) if lines else height
+
+        text_item = OutlinedTextItem(text_cluster_data.tr_text)
+
+        words = text_cluster_data.tr_text.split()
+
+        def fits(size: int) -> bool:
+            self.update_text_item(size, width, text_item, Qt.AlignLeft)
+            document = text_item.document()
+            # Qt breaks a word that doesn't fit mid-word, so check the longest word directly.
+            font = QFont(self.REGULAR_FONT)
+            font.setPixelSize(size)
+            metrics = QFontMetricsF(font)
+            usable_width = width - 2 * document.documentMargin()
+            return (document.size().height() <= height
+                    and max(metrics.horizontalAdvance(w) for w in words) <= usable_width)
+
+        # Largest font size that fits. The bubble routine (start at 1000px, shrink by
+        # the overflow ratio) overshoots to a tiny size on wide paragraph blocks.
+        low, high = constants.MINIMUM_FONT_SIZE, max(constants.MINIMUM_FONT_SIZE, max_size)
+        while low < high:
+            mid = (low + high + 1) // 2
+            if fits(mid):
+                low = mid
+            else:
+                high = mid - 1
+        self.update_text_item(low, width, text_item, Qt.AlignLeft)
+
+        self.position_text_item(text_item, x_min, y_min)
+
+
+    def caption_typesetting(self, speech_bubble_data: SpeechBubble):
+        # Multi-speaker captions: one paragraph per speaker, stacked in reading order
+        # over the whole caption area, each in the speaker's fill colour with a black
+        # outline like the original lettering.
+        clusters = [c for c in speech_bubble_data.text_clusters if c.tr_text]
+        if not clusters:
+            return
+
+        x_min, y_min, x_max, y_max = speech_bubble_data.position
+        width, height = x_max - x_min, y_max - y_min
+        column_widths = sorted(l[2] - l[0] - 2 * OUTLINE_PADDING for c in clusters for l in (c.lines or []))
+        max_size = column_widths[len(column_widths) // 2] if column_widths else height
+
+        items = [OutlinedTextItem(c.tr_text) for c in clusters]
+        words = [w for c in clusters for w in c.tr_text.split()]
+
+        def layout(size: int) -> float:
+            """Lay the paragraphs out at this size; returns their total height."""
+            total = 0.0
+            for cluster, item in zip(clusters, items):
+                self.update_text_item(size, width, item, Qt.AlignCenter)
+                item.setDefaultTextColor(QColor(*cluster.color) if cluster.color else Qt.black)
+                item.setOutline(max(2, size // 10), Qt.black)
+                total += item.document().size().height()
+            return total + CAPTION_PARAGRAPH_GAP * size * (len(items) - 1)
+
+        def fits(size: int) -> bool:
+            font = QFont(self.REGULAR_FONT)
+            font.setPixelSize(size)
+            metrics = QFontMetricsF(font)
+            usable_width = width - 2 * items[0].document().documentMargin()
+            return (layout(size) <= height
+                    and max(metrics.horizontalAdvance(w) for w in words) <= usable_width)
+
+        low, high = constants.MINIMUM_FONT_SIZE, max(constants.MINIMUM_FONT_SIZE, max_size)
+        while low < high:
+            mid = (low + high + 1) // 2
+            if fits(mid):
+                low = mid
+            else:
+                high = mid - 1
+        layout(low)
+
+        y = y_min
+        for item in items:
+            self.position_text_item(item, x_min, y)
+            y += item.document().size().height() + CAPTION_PARAGRAPH_GAP * low
 
 
     def process_text_typesetting(
@@ -250,12 +357,13 @@ class TypesettingProcess:
         self,
         text_item: OutlinedTextItem,
         font_size: int,
-        speech_bubble_lengths: tuple[int, int]
+        speech_bubble_lengths: tuple[int, int],
+        alignment=Qt.AlignCenter
     ) -> tuple[OutlinedTextItem, int]:
         SBx_length, SBy_length = speech_bubble_lengths
 
         while True:
-            text_item = self.update_text_item(font_size, SBx_length, text_item)
+            text_item = self.update_text_item(font_size, SBx_length, text_item, alignment)
             text_document_height = text_item.document().size().height()
 
             if text_document_height > SBy_length:
@@ -263,7 +371,7 @@ class TypesettingProcess:
                 font_size = font_size / height_ratio
             else:
                 break
-        text_item = self.update_text_item(font_size, SBx_length, text_item)
+        text_item = self.update_text_item(font_size, SBx_length, text_item, alignment)
 
         return text_item, font_size
 
@@ -272,7 +380,8 @@ class TypesettingProcess:
         self,
         text_item: OutlinedTextItem,
         font_size: int,
-        speech_bubble_lengths: tuple[int, int]
+        speech_bubble_lengths: tuple[int, int],
+        alignment=Qt.AlignCenter
     ) -> OutlinedTextItem:
         SBx_length, SBy_length = speech_bubble_lengths
         i = 0
@@ -290,8 +399,8 @@ class TypesettingProcess:
                 font_size *= constants.DECREASE_VALUE
             
             i += 1
-            text_item = self.update_text_item(font_size, SBx_length, text_item)
-        text_item = self.update_text_item(font_size, SBx_length, text_item)
+            text_item = self.update_text_item(font_size, SBx_length, text_item, alignment)
+        text_item = self.update_text_item(font_size, SBx_length, text_item, alignment)
 
         return text_item
     
@@ -315,7 +424,8 @@ class TypesettingProcess:
         self.scene.render(painter, target=rect, source=rect)
         painter.end()
 
-        output_path = f"output/page-{self.current_index}-translated.png"
+        stem = os.path.splitext(os.path.basename(self.current_file_name))[0]
+        output_path = f"output/{stem}.png"
         image.save(output_path)
         print(f"Saved image with text to {output_path}")
 
@@ -323,9 +433,11 @@ class TypesettingProcess:
     def batch_text_typesetting(
         self, 
         speech_bubbles_data: list[SpeechBubble],
-        idx: int
+        idx: int,
+        file_name: str
     ):
         self.current_index = idx
+        self.current_file_name = file_name
         for speech_bubble_data in speech_bubbles_data:
             self.text_typesetting(speech_bubble_data, idx)
         self.save_image()

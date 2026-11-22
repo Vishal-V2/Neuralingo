@@ -30,6 +30,6 @@ class TypesettingWorker(QObject):
                 self.typesetting_process.set_image(image_qt)
 
                 self.typesetting_process.load_font()
-                self.typesetting_process.batch_text_typesetting(pages.speech_bubbles, pages.index)
+                self.typesetting_process.batch_text_typesetting(pages.speech_bubbles, pages.index, pages.file_name)
             except Exception as e:
                 print(f"[TYPESETTING] Error on page {pages.index}: {e}")

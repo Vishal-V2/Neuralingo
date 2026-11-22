@@ -9,6 +9,8 @@ import constants
 
 from pipeline.core.detection.speech_bubble import SpeechBubbleDetection
 from pipeline.core.detection.text_cluster import TextClusterDetection
+from pipeline.core.detection.text_blocks import build_text_blocks
+from pipeline.core.detection.captions import SPEAKER_SPLIT_DISTANCE, split_caption
 
 
 
@@ -36,7 +38,10 @@ class DetectionWorker(QObject):
         self.speech_bubble_detection = SpeechBubbleDetection(speech_bubble_model, threshold=self.sb_threshold)
         self.text_cluster_detection = TextClusterDetection(text_cluster_model, threshold=self.tc_threshold)
         self.image_cv2 = image_cv2
-        
+        # "comic" (default): bubble pages. "text": text-heavy pages such as character
+        # profiles, where horizontal paragraphs get split into lines and paragraphs.
+        self.page_mode = self.detection_config.get("page_mode", "comic")
+
         self.speech_bubbles_data = []
 
 
@@ -46,6 +51,10 @@ class DetectionWorker(QObject):
             self._speech_bubble_detection()
             print("[DETECTION] speech_bubbles:", len(self.speech_bubbles_data), [(sb.class_name, sb.confidence) for sb in self.speech_bubbles_data])
             self._text_cluster_detection()
+            self._uncovered_text_detection()
+            if self.page_mode == "text":
+                self._text_block_detection()
+            self._caption_detection()
             try:
                 counts = [len(sb.text_clusters or []) for sb in self.speech_bubbles_data]
                 print("[DETECTION] clusters_per_bubble:", counts)
@@ -59,37 +68,45 @@ class DetectionWorker(QObject):
     
 
     def _speech_bubble_detection(self):
-        # Try with configured threshold; if none found, progressively lower until we find something or hit 0.25
-        attempts = []
-        attempts.append(self.sb_threshold)
-        for t in (0.50, 0.40, 0.35, 0.30, 0.25):
-            if t not in attempts and t < self.sb_threshold:
-                attempts.append(t)
-        for t in attempts:
-            self.speech_bubble_detection.threshold = t
-            result = self.speech_bubble_detection.detect(self.image_cv2)
-            if result:
-                self.speech_bubbles_data = result
-                break
-        else:
-            self.speech_bubbles_data = []
-    
+        # Threshold retries (and the classical-vision fallback) happen inside detect().
+        self.speech_bubbles_data = self.speech_bubble_detection.detect(self.image_cv2)
+
 
     def _text_cluster_detection(self):
         if not self.speech_bubbles_data:
             return
-        # First pass in batch
-        bubbles = self.text_cluster_detection.detect(self.speech_bubbles_data)
-        # Per-bubble recovery: if a particular bubble has zero clusters, retry with lower thresholds for that bubble only
-        for idx, sb in enumerate(bubbles):
-            if not (sb.text_clusters and len(sb.text_clusters) > 0):
-                for t in (self.tc_threshold, 0.45, 0.35, 0.30, 0.25):
-                    self.text_cluster_detection.threshold = t
-                    clusters = self.text_cluster_detection.detect(sb)  # returns list[TextCluster]
-                    if clusters:
-                        sb.text_clusters = clusters
-                        break
-        self.speech_bubbles_data = bubbles
+        # Per-bubble threshold retries (and the whole-bubble fallback) happen inside detect().
+        self.speech_bubbles_data = self.text_cluster_detection.detect(self.speech_bubbles_data)
+
+
+    def _uncovered_text_detection(self):
+        # Text drawn straight onto the art (no bubble) is invisible to the bubble
+        # model; pick it up with a page-wide text pass and add it as frameless.
+        self.speech_bubbles_data += self.text_cluster_detection.detect_uncovered_text(
+            self.image_cv2, self.speech_bubbles_data
+        )
+
+
+    def _text_block_detection(self):
+        # Text pages only: dedupe frameless regions and split horizontal text into paragraphs.
+        frameless = [sb for sb in self.speech_bubbles_data if sb.class_name == constants.FRAMELESS_CLASS_NAME]
+        bubbles = [sb for sb in self.speech_bubbles_data if sb.class_name != constants.FRAMELESS_CLASS_NAME]
+        self.speech_bubbles_data = bubbles + build_text_blocks(self.image_cv2, frameless, bubbles)
+
+
+    def _caption_detection(self):
+        # Outlined vertical captions on the art with several speakers side by side:
+        # one cluster per speaker, so each line is translated as its own sentence.
+        # Every region is tried, not just frameless ones: the bubble model sometimes
+        # gives such captions a bubble class (e.g. narration), and the text model then
+        # finds only fragments inside. split_caption() rejects real speech bubbles
+        # (plain text on a white interior has no outlined letter fill to find).
+        caption_config = self.detection_config.get("caption") or {}
+        speaker_distance = float(caption_config.get("speaker_color_distance", SPEAKER_SPLIT_DISTANCE))
+        for i, sb in enumerate(self.speech_bubbles_data):
+            caption = split_caption(self.image_cv2, sb, speaker_distance=speaker_distance)
+            if caption is not None:
+                self.speech_bubbles_data[i] = caption
 
 
     def visualize_detection(

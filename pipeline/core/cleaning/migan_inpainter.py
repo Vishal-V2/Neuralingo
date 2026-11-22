@@ -18,7 +18,9 @@ class MiganInpainter:
         image_np = np.transpose(image_np, (2, 0, 1))[np.newaxis, ...]
 
         mask_np = np.array(grayscale_mask).astype(np.uint8)
-        binary_mask = np.where(mask_np > 127, 255, 0).astype(np.uint8)
+        # Pipeline convention: white (255) = region to inpaint (same as LaMa).
+        # The MI-GAN ONNX pipeline uses the opposite: 255 = known pixel, 0 = hole.
+        binary_mask = np.where(mask_np > 127, 0, 255).astype(np.uint8)
         binary_mask = binary_mask[np.newaxis, np.newaxis, ...]
 
         input = {

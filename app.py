@@ -4,8 +4,14 @@ from PySide6.QtWidgets import (
 )
 import sys
 import os
+import re
 from model.load_models import load_all_models
 from pipeline.manager.base import AutomaticTranslationBase
+
+def natural_sort_key(name: str):
+    # "2.png" before "10.png": compare digit runs as numbers, the rest case-insensitively.
+    return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", name)]
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -21,7 +27,7 @@ class MainWindow(QMainWindow):
 
         file_paths = [
             os.path.join(folder_path, f)
-            for f in os.listdir(folder_path)
+            for f in sorted(os.listdir(folder_path), key=natural_sort_key)
             if os.path.isfile(os.path.join(folder_path, f)) and f.lower().endswith(('.png', '.jpg', '.jpeg' , '.webp'))
         ]
 
