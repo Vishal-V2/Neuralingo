@@ -15,7 +15,8 @@ from PIL.ImageQt import ImageQt
 
 from pipeline.core.box_data import SpeechBubble
 from pipeline.core.detection.text_blocks import PARAGRAPH_CLASS_NAME
-from pipeline.core.detection.captions import CAPTION_CLASS_NAME, OUTLINE_PADDING
+from pipeline.core.detection.captions import CAPTION_CLASS_NAME, outline_padding
+from pipeline.core.typesetting.text_color import text_color
 import constants
 
 
@@ -191,7 +192,8 @@ class TypesettingProcess:
         if len(text_clusters_data) == 1:
             text_cluster_data = text_clusters_data[0]
             if text_cluster_data.tr_text:
-                self.process_text_typesetting((SBx_min, SBx_max), (SBx_length, SBy_length), text_cluster_data.tr_text, text_cluster_data.position, is_side=False)
+                self.process_text_typesetting((SBx_min, SBx_max), (SBx_length, SBy_length), text_cluster_data.tr_text, text_cluster_data.position, is_side=False,
+                                              color=text_color(text_cluster_data.bounding_image))
         else:
             for text_cluster_data in text_clusters_data:
                 TCx_min, TCy_min, TCx_max, TCy_max = text_cluster_data.position
@@ -204,10 +206,13 @@ class TypesettingProcess:
             TCsorted = sorted(text_clusters_data, key=lambda x: x.area, reverse=True)
 
             for i, td in enumerate(TCsorted):
+                if not td.tr_text:
+                    continue
+                color = text_color(td.bounding_image)
                 if i == 0:
-                    self.process_text_typesetting((SBx_min, SBx_max), (SBx_length, SBy_length), TCsorted[0].tr_text, TCsorted[0].position, is_side=False)
-                else:                    
-                    self.process_text_typesetting((SBx_min, SBx_max), (SBx_length, SBy_length), td.tr_text, td.position, is_side=True)
+                    self.process_text_typesetting((SBx_min, SBx_max), (SBx_length, SBy_length), td.tr_text, td.position, is_side=False, color=color)
+                else:
+                    self.process_text_typesetting((SBx_min, SBx_max), (SBx_length, SBy_length), td.tr_text, td.position, is_side=True, color=color)
 
 
     def paragraph_typesetting(self, speech_bubble_data: SpeechBubble):
@@ -255,15 +260,15 @@ class TypesettingProcess:
 
     def caption_typesetting(self, speech_bubble_data: SpeechBubble):
         # Multi-speaker captions: one paragraph per speaker, stacked in reading order
-        # over the whole caption area, each in the speaker's fill colour with a black
-        # outline like the original lettering.
+        # over the whole caption area, each in the speaker's fill colour with an
+        # outline like the original lettering (black, or white for light-outline captions).
         clusters = [c for c in speech_bubble_data.text_clusters if c.tr_text]
         if not clusters:
             return
 
         x_min, y_min, x_max, y_max = speech_bubble_data.position
         width, height = x_max - x_min, y_max - y_min
-        column_widths = sorted(l[2] - l[0] - 2 * OUTLINE_PADDING for c in clusters for l in (c.lines or []))
+        column_widths = sorted(l[2] - l[0] - 2 * outline_padding(c.light_outline) for c in clusters for l in (c.lines or []))
         max_size = column_widths[len(column_widths) // 2] if column_widths else height
 
         items = [OutlinedTextItem(c.tr_text) for c in clusters]
@@ -275,7 +280,7 @@ class TypesettingProcess:
             for cluster, item in zip(clusters, items):
                 self.update_text_item(size, width, item, Qt.AlignCenter)
                 item.setDefaultTextColor(QColor(*cluster.color) if cluster.color else Qt.black)
-                item.setOutline(max(2, size // 10), Qt.black)
+                item.setOutline(max(2, size // 10), Qt.white if cluster.light_outline else Qt.black)
                 total += item.document().size().height()
             return total + CAPTION_PARAGRAPH_GAP * size * (len(items) - 1)
 
@@ -308,7 +313,10 @@ class TypesettingProcess:
         speech_bubble_lengths: tuple[int, int], 
         tr_text: str, 
         position: tuple[int, int, int, int], 
-        is_side=False):
+        is_side=False,
+        color: tuple[tuple[int, int, int], bool] | None = None):
+        """color: (RGB, light) of the original lettering (see text_color); None draws the
+        default black text with a white outline."""
         text_item = OutlinedTextItem(tr_text)
         font_size = constants.INITIAL_FONT_SIZE
 
@@ -339,6 +347,7 @@ class TypesettingProcess:
                 dist = (TCx_center - SBx_center) * 0.30
                 text_item_x += dist
             
+            self._apply_text_color(text_item, color)
             self.position_text_item(text_item, text_item_x, text_item_y)
         else:
             text_item, font_size = self.adjust_font_size(text_item, font_size, (SBx_length, SBy_length))
@@ -350,8 +359,18 @@ class TypesettingProcess:
             text_item_x = TCx_center - (text_item.document().size().width() / 2)
             text_item_y = TCy_center - (text_item.document().size().height() / 2)
 
+            self._apply_text_color(text_item, color)
             self.position_text_item(text_item, text_item_x, text_item_y)
     
+
+    def _apply_text_color(self, text_item: OutlinedTextItem, color) -> None:
+        # Keep the original lettering's colour; the outline contrasts with it.
+        if color is None:
+            return
+        rgb, light = color
+        text_item.setDefaultTextColor(QColor(*rgb))
+        text_item.setOutline(self.outline_width, Qt.black if light else Qt.white)
+
 
     def adjust_font_size(
         self,

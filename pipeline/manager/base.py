@@ -32,6 +32,8 @@ class PageJob:
 
 class AutomaticTranslationBase(QObject):
     receive_selected_files = Signal(list)
+    # Emitted once the whole batch has been typeset and saved.
+    finished = Signal()
 
     def __init__(self, speech_bubble_model, text_cluster_model, manga_ocr, cleaning_inpainter):
         super().__init__()
@@ -151,3 +153,4 @@ class AutomaticTranslationBase(QObject):
 
     def _handle_typesetting_data(self):
         print("DONE ALL BATCH")
+        self.finished.emit()

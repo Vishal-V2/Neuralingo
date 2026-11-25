@@ -12,6 +12,9 @@ line, and returns a CAPTION_CLASS_NAME region with one text cluster per speaker,
 reading order (right to left). Each cluster carries its column boxes (lines) and the
 speaker's fill colour, so OCR reads it column by column, cleaning masks only the
 letters, and typesetting can draw each speaker's English in their colour.
+
+Some captions use the opposite style: darker coloured letters outlined in white. They
+are handled by inverting the grey levels (letter_gray), so the same code applies.
 """
 import cv2
 import numpy as np
@@ -82,6 +85,35 @@ SPEAKER_SPLIT_DISTANCE = 12
 GROW_COLOR_DISTANCE = 25
 # Margin (px) around each column for the outline, on top of the fill extent.
 OUTLINE_PADDING = 8
+# The same for white outlines, which are drawn thicker (measured: 8px plus a soft edge).
+LIGHT_OUTLINE_PADDING = 14
+
+
+def outline_padding(light_outline: bool = False) -> int:
+    return LIGHT_OUTLINE_PADDING if light_outline else OUTLINE_PADDING
+# Light-outline captions: inverted, a white speech bubble with black text looks exactly
+# like one (black letters enclosed by white). A caption's white outline is a thin ring
+# with art beyond it; a bubble's white goes on. The band from LIGHT_BAND_INNER to twice
+# that (in column spacings) past the letters must be at most LIGHT_BAND_MAX light.
+# Measured: captions 0.00-0.24, bubbles 0.89-1.00.
+LIGHT_BAND_INNER = 0.12
+LIGHT_BAND_MAX = 0.5
+
+
+def letter_gray(image: np.ndarray, light_outline: bool = False) -> np.ndarray:
+    """Grey levels in which the letter outline is dark and the fill light."""
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    return 255 - gray if light_outline else gray
+
+
+def _light_beyond_outline(gray: np.ndarray, fill: np.ndarray, pitch: float) -> float:
+    """Share of light (outline-coloured) pixels in a band just past the letter outlines."""
+    reach = max(3, int(round(LIGHT_BAND_INNER * pitch)))
+    fill = fill.astype(np.uint8)
+    inner = cv2.dilate(fill, np.ones((2 * reach + 1,) * 2, np.uint8))
+    outer = cv2.dilate(fill, np.ones((4 * reach + 1,) * 2, np.uint8))
+    band = (outer > 0) & (inner == 0)
+    return float((gray[band] < OUTLINE_MAX_GRAY).mean()) if band.any() else 1.0
 
 
 def fill_mask(gray: np.ndarray, max_size: float | None = None) -> np.ndarray:
@@ -240,13 +272,15 @@ def _lab(color_bgr: np.ndarray) -> np.ndarray:
 OCR_CHUNK_CHARS = 10
 
 
-def column_ocr_images(column: np.ndarray) -> list[np.ndarray]:
+def column_ocr_images(column: np.ndarray, light_outline: bool = False) -> list[np.ndarray]:
     """A caption column crop as clean black-on-white text, cut into readable chunks.
 
     column: BGR crop of one column (with its outline padding).
+    light_outline: the lettering is outlined in white (see letter_gray).
     """
-    gray = cv2.cvtColor(column, cv2.COLOR_BGR2GRAY)
-    char_size = max(1, column.shape[1] - 2 * OUTLINE_PADDING)
+    gray = letter_gray(column, light_outline)
+    padding = outline_padding(light_outline)
+    char_size = max(1, column.shape[1] - 2 * padding)
     fill = fill_mask(gray, FILL_MAX_SIZE * char_size)
     text = np.where(fill, 0, 255).astype(np.uint8)
 
@@ -264,16 +298,17 @@ def column_ocr_images(column: np.ndarray) -> list[np.ndarray]:
         if len(candidates) == 0:
             break
         cut = int(candidates[np.argmin(np.abs(candidates - target))])
-        images.append(text[max(0, top - OUTLINE_PADDING):cut])
+        images.append(text[max(0, top - padding):cut])
         top = cut
         while top < bottom and blank[top]:
             top += 1
-    images.append(text[max(0, top - OUTLINE_PADDING):bottom + OUTLINE_PADDING])
+    images.append(text[max(0, top - padding):bottom + padding])
     return images
 
 
 def split_caption(image: np.ndarray, region: SpeechBubble, log: list[str] | None = None,
-                  speaker_distance: float = SPEAKER_SPLIT_DISTANCE) -> SpeechBubble | None:
+                  speaker_distance: float = SPEAKER_SPLIT_DISTANCE,
+                  light_outline: bool = False) -> SpeechBubble | None:
     """Split a region of outlined vertical columns into per-speaker clusters.
 
     Returns None (leave the region as it is) unless it's taller than wide and has at
@@ -282,6 +317,7 @@ def split_caption(image: np.ndarray, region: SpeechBubble, log: list[str] | None
     tools/caption_diagnose.py); numbers only, no text or image content.
     speaker_distance: neighbouring columns closer in colour than this (CIELAB) are
     one speaker (see SPEAKER_SPLIT_DISTANCE).
+    light_outline: look for darker letters outlined in white instead (see letter_gray).
     """
     def note(message: str) -> None:
         if log is not None:
@@ -292,7 +328,7 @@ def split_caption(image: np.ndarray, region: SpeechBubble, log: list[str] | None
         note(f"rejected: not taller than wide ({rx1 - rx0}x{ry1 - ry0})")
         return None
     # A block of many horizontal lines can be taller than wide too (profile pages).
-    if _is_horizontal(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY), region.position):
+    if _is_horizontal(letter_gray(image, light_outline), region.position):
         note("rejected: text runs horizontally (orientation check)")
         return None
     page_h, page_w = image.shape[:2]
@@ -301,7 +337,8 @@ def split_caption(image: np.ndarray, region: SpeechBubble, log: list[str] | None
     # Column spacing, from the detected box (first with a generous size limit).
     cx0, cx1 = max(0, rx0 - CONTEXT), min(page_w, rx1 + CONTEXT)
     by0, by1 = max(0, ry0 - CONTEXT), min(page_h, ry1 + CONTEXT)
-    box_fill = fill_mask(cv2.cvtColor(image[by0:by1, cx0:cx1], cv2.COLOR_BGR2GRAY))
+    box_gray = letter_gray(image[by0:by1, cx0:cx1], light_outline)
+    box_fill = fill_mask(box_gray)
     if not box_fill.any():
         note("rejected: no outlined letter fill found in the box")
         return None
@@ -322,12 +359,18 @@ def split_caption(image: np.ndarray, region: SpeechBubble, log: list[str] | None
         note("rejected: no regular column spacing found")
         return None
     note(f"column spacing: {pitch:.0f}px")
+    if light_outline:
+        beyond = _light_beyond_outline(box_gray, box_fill, pitch)
+        if beyond > LIGHT_BAND_MAX:
+            note(f"rejected: light beyond the letters' outline {beyond:.0%} > {LIGHT_BAND_MAX:.0%} (a white bubble, not outlined letters)")
+            return None
+        note(f"light beyond the letters' outline: {beyond:.0%}")
 
     # Letter fills over the region's full-height strip of the page, so columns can be
     # followed past the box's top and bottom.
     cy0, cy1 = 0, page_h
     crop = image[cy0:cy1, cx0:cx1]
-    fill = fill_mask(cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY), FILL_MAX_SIZE * pitch)
+    fill = fill_mask(letter_gray(crop, light_outline), FILL_MAX_SIZE * pitch)
     lab = cv2.cvtColor(crop, cv2.COLOR_BGR2LAB).astype(float)
 
     top, bottom = by0, by1
@@ -409,8 +452,9 @@ def split_caption(image: np.ndarray, region: SpeechBubble, log: list[str] | None
         source = pixels if pixels.any() else fill[y0:y1, x0:x1]
         color_lab = np.median(lab[y0:y1, x0:x1][source], axis=0)
         color_bgr = np.median(crop[y0:y1, x0:x1][source], axis=0)
-        box = (int(max(0, cx0 + x0 - OUTLINE_PADDING)), int(max(0, cy0 + y0 - OUTLINE_PADDING)),
-               int(min(page_w, cx0 + x1 + OUTLINE_PADDING)), int(min(page_h, cy0 + y1 + OUTLINE_PADDING)))
+        pad = outline_padding(light_outline)
+        box = (int(max(0, cx0 + x0 - pad)), int(max(0, cy0 + y0 - pad)),
+               int(min(page_w, cx0 + x1 + pad)), int(min(page_h, cy0 + y1 + pad)))
         columns.append((box, color_lab, color_bgr))
 
     # Neighbouring columns of the same colour are one speaker's line continuing.
@@ -438,6 +482,7 @@ def split_caption(image: np.ndarray, region: SpeechBubble, log: list[str] | None
             bounding_image=image[y0:y1, x0:x1],
             lines=boxes,
             color=(int(r), int(g), int(b)),
+            light_outline=light_outline,
         ))
 
     x0, y0 = min(rx0, *(c.position[0] for c in clusters)), min(ry0, *(c.position[1] for c in clusters))

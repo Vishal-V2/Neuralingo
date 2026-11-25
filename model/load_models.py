@@ -25,6 +25,20 @@ try:
 except Exception:
     pass
 
+MANGA_OCR_MODEL = "kha-white/manga-ocr-base"
+
+
+def _manga_ocr_source() -> str:
+    # Load manga_ocr from the local Hugging Face cache when it's there: by repo name,
+    # transformers first asks the Hub whether the model changed, which costs ~4.5 s
+    # per start. Falls back to the repo name (download) on a fresh machine.
+    try:
+        from huggingface_hub import snapshot_download
+        return snapshot_download(MANGA_OCR_MODEL, local_files_only=True)
+    except Exception:
+        return MANGA_OCR_MODEL
+
+
 speech_bubble_model = None
 text_cluster_model = None
 ocr_engine = None
@@ -46,7 +60,7 @@ def load_all_models():
         ocr_engine = EasyOcrRecognition(language=ocr_language)
     else:
         from manga_ocr import MangaOcr
-        ocr_engine = MangaOcr()
+        ocr_engine = MangaOcr(_manga_ocr_source())
 
     cleaning_config = config.cleaning_config
     selected_inpainter = cleaning_config.get("model", "lama")

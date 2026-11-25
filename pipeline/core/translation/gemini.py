@@ -85,7 +85,7 @@ class GeminiApi:
             elif any(keyword in error_message for keyword in ["timeout", "timed out"]):
                 print("NETWORK_TIMEOUT_ERROR")
             else:
-                print("UNEXPECTED_ERROR")
+                print(f"UNEXPECTED_ERROR: {type(e).__name__}: {e}")
 
         return {}
     

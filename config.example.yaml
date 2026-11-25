@@ -1,0 +1,50 @@
+# Copy to config.yaml and fill in a key, or pass keys as environment variables
+# (GEMINI_API_KEY, GROQ_API_KEY, DEEPSEEK_API_KEY; NEURALINGO_TRANSLATOR picks which
+# provider is tried first). Never commit config.yaml: it holds your keys.
+api_group:
+  selected: groq
+  gemini:
+    model: gemini-3.5-flash-lite
+    api_key: ""
+  deepseek:
+    model: deepseek-chat
+    api_key: ""
+  groq:
+    model: openai/gpt-oss-120b
+    api_key: ""
+
+detection_group:
+  speech_bubble:
+    confidence_threshold: 0.60
+  text_cluster:
+    confidence_threshold: 0.60
+  caption:
+    # Outlined multi-speaker captions: neighbouring columns whose text colours differ
+    # by less than this (CIELAB distance) count as one speaker. Lower = splits more
+    # readily (~5 near-identical, ~12 slight tint, ~25 white vs pale lavender,
+    # 50+ orange vs blue). Too low and one speaker's shaded columns split apart.
+    speaker_color_distance: 12
+    
+
+cleaning_group:
+  model: lama
+
+recognition_group:
+  ocr_engine: manga_ocr
+  ocr_language: japanese
+
+translation_group:
+  preserve_honorifics:
+    in_use: true
+  preserve_common_terms:
+    in_use: true
+
+typesetting_group:
+  font_matching:
+    in_use: false
+    standard: CCVictorySpeech
+    shout: CCVictorySpeech
+    emphasis: CCVictorySpeech
+    narration: CCVictorySpeech
+    frameless: CCVictorySpeech
+    side: CCWildWords

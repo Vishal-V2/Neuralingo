@@ -16,6 +16,9 @@ class TextCluster:
     # Fill colour (RGB) of an outlined caption's text: one per speaker on multi-speaker
     # captions (see detection/captions.py); None otherwise.
     color: tuple[int, int, int] | None = None
+    # Outlined caption lettering with a light outline around darker fill (e.g. purple
+    # letters outlined in white) instead of the usual dark outline around light fill.
+    light_outline: bool = False
 
 
 @dataclass

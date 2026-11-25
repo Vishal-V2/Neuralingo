@@ -5,9 +5,20 @@ images/
 output/
 out/
 test/
+tools/
+pipeline/core/detection/README.md
 config.yaml
 main.py
 cli/
 model/old
 assets/
 graphify-out/
+*.pyc
+
+# Docker image exports (docker save ... | gzip > neuralingo.tar.gz), several GB
+*.tar
+*.tar.gz
+
+# Core dumps from crashed runs
+/core
+/core.[0-9]*

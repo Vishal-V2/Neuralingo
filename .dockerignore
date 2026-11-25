@@ -1,0 +1,15 @@
+# Keep secrets, local data and the development environment out of the image.
+config.yaml
+.env
+.venv/
+.git/
+out/
+output/
+test/
+example/
+images/
+graphify-out/
+cli/
+model/old/
+**/__pycache__/
+*.pyc

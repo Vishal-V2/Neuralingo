@@ -19,6 +19,10 @@ class TypesettingWorker(QObject):
     @Slot()
     def run(self):
         self._start_text_typesetting()
+        # The scene was created on this thread; release it here. Left for Python to
+        # destroy from the main thread at exit, Qt can crash (QBasicTimer::stop).
+        self.typesetting_process.scene = None
+        self.typesetting_process.image_item = None
 
         self.finished.emit()
     

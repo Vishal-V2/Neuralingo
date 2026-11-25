@@ -1,8 +1,16 @@
-import easyocr
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
 import cv2
 import os
 
 from pipeline.core.box_data import SpeechBubble, TextCluster
+
+if TYPE_CHECKING:
+    import easyocr
+
+# easyocr itself is imported only when a reader is created: importing it takes ~4 s,
+# and this module is imported on every run even when manga_ocr is the OCR engine.
 
 
 
@@ -44,6 +52,7 @@ class EasyOcrRecognition:
                 pass
 
         lang_codes = self.LANG_MAP.get(language, ["ja", "en"])
+        import easyocr
         self.easy_ocr = easyocr.Reader(lang_codes, gpu=gpu)
         self.language = language
         print(f"EasyOCR initialized for language: {language} ({lang_codes})")
@@ -52,6 +61,7 @@ class EasyOcrRecognition:
     @classmethod
     def create_reader(cls, language: str = "japanese", gpu: bool = True) -> easyocr.Reader:
         lang_codes = cls.LANG_MAP.get(language, ["ja", "en"])
+        import easyocr
         reader = easyocr.Reader(lang_codes, gpu=gpu)
         print(f"EasyOCR initialized for language: {language} ({lang_codes})")
         return reader

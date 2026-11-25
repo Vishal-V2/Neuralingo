@@ -65,11 +65,15 @@ class SpeechBubbleDetection:
     def __init__(self, model: YOLO, threshold: float | None = None):
         self.model = model
         self.threshold = threshold if threshold is not None else constants.SPEECH_BUBBLE_THRESHOLD
+        # Proposals below the threshold that detect() settled on, as (conf, class_name,
+        # xyxy): later steps may accept one they can verify themselves (captions).
+        self.weak_candidates: list[tuple[float, str, tuple[int, int, int, int]]] = []
     
 
     def detect(self, image: np.ndarray) -> list[SpeechBubble]:
         # Run YOLO once at the lowest threshold we might accept, then walk down the
         # threshold ladder by filtering that single result.
+        self.weak_candidates = []
         SBresult = self.model(image, conf=min(self.threshold, *RETRY_THRESHOLDS))[0]
         candidates = merge_cross_class_duplicates([
             (box.conf.item(), self.model.names[int(box.cls.item())], tuple(map(int, box.xyxy.tolist()[0])))
@@ -90,6 +94,7 @@ class SpeechBubbleDetection:
                     text_clusters=None
                 ))
             if SBdata:
+                self.weak_candidates = [c for c in candidates if c[0] < threshold]
                 return SBdata
 
         # Classical-vision fallback: only run when YOLO found nothing even at the
@@ -120,7 +125,7 @@ class SpeechBubbleDetection:
             if aspect < 0.15 or aspect > 6.0:
                 continue
             roi_mean = np.mean(gray[max(0, y):min(h, y + hh), max(0, x):min(w, x + ww)])
-            if roi_mean < 160:  # bubbles tend to be light
+            if roi_mean < 200:  # bubbles tend to be light
                 continue
             candidate = (x, y, x + ww, y + hh)
             # only add if not overlapping with existing bubbles too much

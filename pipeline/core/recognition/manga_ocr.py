@@ -45,7 +45,7 @@ class TextRecognition:
                 continue
             if text_cluster_data.color is not None:
                 # Outlined caption column: read its letter fills as clean text, in chunks.
-                parts.extend(self.manga_ocr(Image.fromarray(chunk)) for chunk in column_ocr_images(crop))
+                parts.extend(self.manga_ocr(Image.fromarray(chunk)) for chunk in column_ocr_images(crop, text_cluster_data.light_outline))
             else:
                 parts.append(self.manga_ocr(convert_image.cv2_to_pil(crop)))
 
